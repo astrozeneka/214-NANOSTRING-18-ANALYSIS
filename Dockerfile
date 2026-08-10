@@ -60,6 +60,12 @@ RUN Rscript -e "reticulate::conda_install('r-tf23', packages = 'h5py')"
 # Anaconda channel, which isn't enabled here), so install it via pip instead.
 RUN Rscript -e "reticulate::conda_install('r-tf23', packages = 'tensorflow==2.3.0', pip = TRUE)"
 
+RUN Rscript -e "BiocManager::install('sva', update = FALSE, ask = FALSE)"
+
+RUN Rscript -e "install.packages('uwot', repos='https://cloud.r-project.org')"
+RUN Rscript -e "install.packages('ggplot2', repos='https://cloud.r-project.org')"
+RUN Rscript -e "install.packages('ggrepel', repos='https://cloud.r-project.org')"
+
 WORKDIR /app/214-NANOSTRING-18-ANALYSIS
 
 CMD ["R"]

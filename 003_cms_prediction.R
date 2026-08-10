@@ -8,6 +8,9 @@
 # expression. This NanoString panel covers only ~769 genes, so most gene sets will
 # have sparse/no coverage and predictions here are expected to be noisier/less
 # reliable than the RNA-seq-based calls in 211-ONCOGENES. Proceeding per request.
+#
+# HOW TO RUN WITH DOCKER IN THE CURRENT SETTINGS (Windows)
+# docker run --rm -it -v "%cd%:/app/214-NANOSTRING-18-ANALYSIS" -v "%cd%\..\174-CMS-CLASSIFIER:/app/174-CMS-CLASSIFIER" -w /app/214-NANOSTRING-18-ANALYSIS 214-nanostring-18-analysis
 
 library(org.Hs.eg.db)
 library(reticulate)
