@@ -1,7 +1,18 @@
-# 005_supervised_umap.R
-# Supervised UMAP colored by CMS, mirroring ../211-ONCOGENES/109_plot_umap_v3.R
-# exactly (same PCA30 -> uwot supervised UMAP recipe, same ellipse-label placement,
-# same visual style), applied to the ComBat-merged NanoString + TCGA log2TPM matrix.
+# 101_supervised_umap_17_samples.R
+# Same recipe as 005_supervised_umap.R (PCA30 -> uwot supervised UMAP, same
+# ellipse-label placement, same visual style), but restricted to the 17
+# NanoString samples that are common to both this project's UMAP and the
+# 308-CMS-AND-ONCOPLOT heatmap (301_heatmap_nanostring.py):
+#
+#   Si02, Si07, Si16, Si20, Si25, Si26, Si27, Si30, Si32,
+#   Si40, Si44, Si50, Si54, Si61, Si65, Si70, Si72
+#
+# Si27 is forced to CMS2 here: DeepCC on this project's TPM-normalized
+# NanoString expression called it NA (unclassified at cutoff 0.5), but both
+# the 308 project's geometric-mean-normalized NanoString call AND its
+# independent RNA-seq-based call agree on CMS2, so we take that as the label.
+#
+# TCGA reference samples are left untouched (still plotted as background).
 
 library(data.table)
 library(uwot)
@@ -10,10 +21,10 @@ library(ggrepel)
 
 cms_colors <- c(CMS1 = "#E89D33", CMS2 = "#0072AC", CMS3 = "#D079A4", CMS4 = "#009D76")
 
-out_dir <- "results/005_umap_supervised"
+out_dir <- "results/101_umap_supervised_17_samples"
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
-# ── Args: Rscript 005_supervised_umap.R -tw <target_weight> -seed <seed> -el <ellipse_level>
+# ── Args: Rscript 101_supervised_umap_17_samples.R -tw <target_weight> -seed <seed> -el <ellipse_level>
 args <- commandArgs(trailingOnly = TRUE)
 parse_named_args <- function(args, defaults) {
   opts <- defaults
@@ -39,7 +50,7 @@ tw_tag <- sprintf("tw%03d", target_weight * 1000)
 seed_tag <- sprintf("seed%d", umap_seed)
 el_tag <- sprintf("el%03d", ellipse_level * 100)
 
-message(sprintf("[005_supervised_umap] target_weight = %s, seed = %s, ellipse_level = %s",
+message(sprintf("[101_supervised_umap_17_samples] target_weight = %s, seed = %s, ellipse_level = %s",
                  target_weight, umap_seed, ellipse_level))
 
 # ── 1. Load data ──────────────────────────────────────────────────────────────
@@ -53,19 +64,37 @@ tcga_cms <- fread("data/CMS-TCGA.tsv")
 cms_dict <- setNames(tcga_cms$deepcms_subtype, tcga_cms$patient_id)
 cms_dict[nano_cms$sample] <- nano_cms$CMS  # our labels take priority over TCGA's
 
+# Manual override: DeepCC called Si27 NA under this project's TPM-normalized
+# preprocessing, but the geometric-mean-normalized NanoString call and the
+# independent RNA-seq call (308-CMS-AND-ONCOPLOT project) both agree on CMS2.
+cms_dict["Si27.RCC"] <- "CMS2"
+
 # Batch: TCGA (public reference) vs Internal (our own NanoString samples)
 # Matrix columns use the bare patient barcode (e.g. "TCGA-AA-3561"), matching
 # patient_id, not sample_id which carries a "-01A" sample-type suffix.
 batch <- setNames(rep("TCGA", nrow(tcga_cms)), tcga_cms$patient_id)
 
+# Restrict the Internal (NanoString) cohort to the 17 samples common to both
+# this project's UMAP and the 308 project's heatmap. TCGA reference samples
+# are unaffected.
+allowed_internal <- c(
+  "Si02.RCC", "Si07.RCC", "Si16.RCC", "Si20.RCC", "Si25.RCC", "Si26.RCC",
+  "Si27.RCC", "Si30.RCC", "Si32.RCC", "Si40.RCC", "Si44.RCC", "Si50.RCC",
+  "Si54.RCC", "Si61.RCC", "Si65.RCC", "Si70.RCC", "Si72.RCC"
+)
+
 samples <- rownames(mat)
+is_tcga <- samples %in% names(batch)
+keep_cohort <- is_tcga | samples %in% allowed_internal
 
 cms_labels <- cms_dict[samples]
-keep <- cms_labels %in% names(cms_colors)  # drop NA, "", and "NOLBL"
+keep <- keep_cohort & cms_labels %in% names(cms_colors)  # drop NA, "", "NOLBL", and excluded Internal samples
 mat <- mat[keep, ]
 cms_labels <- factor(cms_labels[keep])
 samples <- rownames(mat)
-batch_labels <- ifelse(samples %in% names(batch), "TCGA", "Internal")
+batch_labels <- ifelse(samples %in% names(batch), "TCGA", "Siriraj Cohort")
+
+stopifnot(sum(batch_labels == "Siriraj Cohort") == length(allowed_internal))
 
 # ── 2. PCA30 → soft supervised UMAP (uwot) ───────────────────────────────────
 expression_matrix <- scale(mat)
@@ -85,6 +114,15 @@ coords <- umap(
 colnames(coords) <- c("UMAP1", "UMAP2", "UMAP3")
 
 umap_df <- data.table(SampleId = samples, coords, CMS = as.character(cms_labels), Batch = batch_labels)
+
+# Match the sample-label style used in 308-CMS-AND-ONCOPLOT/301_heatmap_nanostring.py:
+# "Si" + zero-padded 3-digit number (e.g. Si02.RCC -> Si002, Si27.RCC -> Si027).
+# Only applies to Siriraj Cohort (NanoString) samples; TCGA barcodes are left as-is.
+format_heatmap_style <- function(id) {
+  paste0("Si", formatC(as.integer(sub("^Si0*(\\d+)\\..*$", "\\1", id)), width = 3, flag = "0"))
+}
+umap_df[, SampleLabel := ifelse(Batch == "Siriraj Cohort", format_heatmap_style(SampleId), SampleId)]
+
 fwrite(umap_df, file.path(out_dir, paste0("umap_supervised_cms_", tw_tag, "_", seed_tag, "_", el_tag, ".csv")))
 
 # ── 3. Plot ───────────────────────────────────────────────────────────────────
@@ -143,7 +181,7 @@ p <- ggplot(umap_df, aes(UMAP1, UMAP2, color = CMS, shape = Batch, alpha = Batch
   geom_point(size = 2) +
   stat_ellipse(aes(shape = NULL, alpha = NULL), type = "norm", level = ellipse_level,
                linetype = "dashed", linewidth = 0.8, show.legend = FALSE) +
-  geom_text_repel(data = umap_df[Batch == "Internal"], aes(label = SampleId),
+  geom_text_repel(data = umap_df[Batch == "Siriraj Cohort"], aes(label = SampleLabel),
                    size = 3, fontface = "bold", show.legend = FALSE, max.overlaps = Inf,
                    box.padding = 1.2, min.segment.length = 0,
                    segment.color = "grey40", segment.size = 0.4) +
@@ -153,10 +191,10 @@ p <- ggplot(umap_df, aes(UMAP1, UMAP2, color = CMS, shape = Batch, alpha = Batch
                     show.legend = FALSE, max.overlaps = Inf, min.segment.length = 0,
                     segment.color = "grey20", segment.size = 0.6, seed = 42) +
   scale_color_manual(values = cms_colors) +
-  scale_shape_manual(values = c(TCGA = 16, Internal = 17)) +
-  scale_alpha_manual(values = c(TCGA = 0.4, Internal = 0.9)) +
+  scale_shape_manual(values = c(TCGA = 16, `Siriraj Cohort` = 17)) +
+  scale_alpha_manual(values = c(TCGA = 0.4, `Siriraj Cohort` = 0.9)) +
   guides(color = "none") +
-  labs(title = paste0("Supervised UMAP (uwot, PCA30, target_weight = ", target_weight, ", seed = ", umap_seed, ", ellipse_level = ", ellipse_level, ")")) +
+  labs(title = paste0("Supervised UMAP, 17-sample cohort (uwot, PCA30, target_weight = ", target_weight, ", seed = ", umap_seed, ", ellipse_level = ", ellipse_level, ")")) +
   theme_minimal()
 
 ggsave(file.path(out_dir, paste0("umap_supervised_cms_", tw_tag, "_", seed_tag, "_", el_tag, ".png")), p, width = 8, height = 8, dpi = 150)

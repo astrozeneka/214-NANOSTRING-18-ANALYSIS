@@ -11,6 +11,8 @@ library(sva)
 nano <- read.csv("results/002_tpm/nanostring-18patients-log2tpm.csv", row.names = 1, check.names = FALSE)
 tcga <- read.csv("../211-ONCOGENES/tcga_data/log2tpm_tcga.csv", row.names = 1, check.names = FALSE)
 
+nano <- nano[, colnames(nano) != "Si36.RCC"]
+
 common_genes <- intersect(rownames(nano), rownames(tcga))
 
 nano <- nano[common_genes, ]
